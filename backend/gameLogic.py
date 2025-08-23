@@ -548,13 +548,72 @@ class Game:
         dVert = defender.basicRatings["Verticality"] #defensive player
         
         match offensiveAction:
-            case "Shoot" | "Post Fade" | "Post Hook" | "Floater" | "Layup" | "Dunk":
-                if ballHandler.pumpFaked:
-                    if defensiveAction in ["Contest", "Verticality", "Block"]:
-                        defender.hasBeenPumpFaked = True
-                        print("Fell for the pump fake.")
-                        self.makeOptions(teamNum, )
+            case "Teammate Cut": #ballHandler refers to the cutting player
+                match defensiveAction:
+                    case "Stay on Defense":
+                        intDef = defender.basicRatings["Interior D"]
+                        driveRtg = ballHandler.basicRatings["Drive"]
                         
+                        total = driveRtg + intDef
+                        finalChance = (driveRtg/total) * 100
+                        
+                        result = self.determineSuccess(finalChance)
+                    case "Watch":
+                        result = True
+                        
+                result = self.determineSuccess(finalChance)
+                if result:  
+                    locNum = randint(13, 15)
+                    location = spots[locNum]
+                    
+                    ballHandler.location = location
+                    if not ballHandler.wideOpen:
+                        defender.location = location
+                    print(f"{ballHandler.name} has moved to {ballHandler.location}.")
+                    self.makeOptions(teamNum)
+                else:
+                    print("Unable to cut through the defense.")
+                    self.makeOptions(teamNum)
+                
+            case "Pump Fake":
+                match defensiveAction:
+                    case "Contest":
+                        print("???")
+                        defender.faltered = True
+                        print("Fell for the pump fake?")
+                        self.makeOptions(teamNum)
+                    case "Stand Ground":
+                        print("No effect.")
+                        self.makeOptions(teamNum)
+                    case "Position for Rebound":
+                        print("Fell for it? Left to position for rebound.")
+                        defender.inPosition = True
+                        ballHandler.wideOpen = True
+
+                ballHandler.pumpFaking = False
+            
+            case "Pass Fake":
+                match defensiveAction:
+                    case "Steal":
+                        print("???")
+                        defender.faltered = True
+                        print("Fell for the pass fake?")
+                        self.makeOptions(teamNum)
+                    case "Stay on Defense":
+                        print("No effect.")
+                        self.makeOptions(teamNum)
+                
+                ballHandler.pumpFaking = False
+                    
+            case "Shoot" | "Post Fade" | "Post Hook" | "Floater" | "Layup" | "Dunk":
+                if ballHandler.pumpFaking or defender.hasBeenPumpFaked:
+                    if defensiveAction in ["Contest", "Verticality", "Block"]:
+                        defender.faltered = True
+                        print("Fell for the pump fake.")
+                        ballHandler.pumpFaking = False
+                        defender.hasBeenPumpFaked = False
+                        self.makeOptions(teamNum)
+                    # else: #?    
                 else:
                     if (ballHandler.pickedUpDribble and ballHandler.dribbled) or (not ballHandler.pickedUpDribble and not ballHandler.dribbled):
                         shotTypeRtg = ballHandler.basicRatings["StandStill Shot"]
@@ -578,7 +637,8 @@ class Game:
                     
                     shotDistRtg = ballHandler.basicRatings[shotDist]    
                         
-                    finalChance = shotDistRtg * (1 + shotTypeRtg/100) * (1 + shooterSpotRtg/100) * bonus   
+                    finalChance = shotDistRtg * (1 + shotTypeRtg/100) * (1 + shooterSpotRtg/100) * bonus  
+                    
                     if not ballHandler.postingUp:
                         difHeight = oHeight - dHeight
                         if abs(difHeight) < 5:
@@ -691,108 +751,124 @@ class Game:
                             
                             self.startPossession(False, teamNum, True)
                         else:
-                        print("Ball did not go through hoop.")
-                        
-                        ballHandler.fga += 1
-                        if amount == 3:
-                            ballHandler.three_fga += 1
-                            self.statObj.three_fga[teamNum - 1] += 1
-                        self.statObj.fga[teamNum - 1] += 1
-                        
-                        reboundResult = self.calcRebound(self.team1, self.team2)
-                        reboundingPlayer = reboundResult[0]
-                        reboundingPlayer.rebounds += 1
-                        ballHandler.holdingBall = False
-                        defender.guardingBall = False
-                        reboundingPlayer.holdingBall = True
-                        
-                        
-                        resultingTeam = reboundResult[2]
-                        resultingTeam.ballHandler = reboundingPlayer
-                        # resultingTeam.onBallDefender = reboundingPlayer.defendedBy
-                        
-                        reboundingTeamNum = reboundResult[1]
-                        self.statObj.rebounds[reboundingTeamNum - 1] += 1
-                        
-                        if reboundingTeamNum == teamNum:
-                            print(f"Offensive Rebound by {reboundingPlayer.name}. They are at {reboundingPlayer.location}.")
-                            for player in resultingTeam.players:
-                                player.doubled = False
-                                player.midDrive = False
-                                player.postingUp = False
-                        else:
-                            for player in self.team1.players:
-                                player.reset()
-                            for player in self.team2.players:
-                                player.reset()
-                                                     
-                        self.startPossession(False, reboundingTeamNum, True)
-                                                   
-            case "Pass":
-                passRtg = ballHandler.basicRatings["Passing"]
-                otHandRtg = self.targetPlayer.basicRatings["Hands"] # the player who is receiving the pass's ability to catch it
-
-                match defensiveAction:
-                    
-                    case "Steal":
-                        dStealRtg = defender.basicRatings["Steal"]
-                        dHandRtg = defender.basicRatings["Hands"] # the player stealing it's ability to intercept
-
-                        oChance = passRtg + otHandRtg
-                        dChance = dStealRtg + dHandRtg
-                        if ballHandler.doubled:
-                            dChance += 20
-                        total = oChance + dChance
-                        stealChance = (dChance/total) * 100
-                        ballStolen = self.determineSuccess(stealChance)
-                        
-                    case "Stay on Defense" | "Give Up":
-                        pass
-                
-                if ballStolen:
-                    print("Pass intercepted.")
-                    defender.holdingBall = True
-                    defender.guardingBall = False
-                    ballHandler.holdingBall = False
-                    ballHandler.guardingBall = True
-                    
-                    
-                    self.startPossession(False, otherTeamNum, False)
-                    
-                else:
-                    finalChance = passRtg + otHandRtg
-                    if finalChance >= 100:
-                        finalChance = 99
-                    
-                    if ballHandler.doubled:
-                        finalChance -= 20
-                        if finalChance < 1:
-                            finalChance == 1
-                    
-                    result = self.determineSuccess(finalChance)
-                    if result:
-                        
-                        ballHandler.holdingBall = False
-                        defender.guardingBall = False
-                        self.targetPlayer.holdingBall = True
-                        self.targetPlayer.receivingPass = True
-                        
-                        print(f"Pass successful. {self.targetPlayer.name} has the ball at {self.targetPlayer.location}.")
-                        
-                        if self.targetPlayer.wideOpen:
-                            self.startPossession(False, teamNum, False)
-                        else:
-                            self.startPossession(False, teamNum, True)
+                            print("Ball did not go through hoop.")
                             
-                    else:
-                        print("Pass slipped through teammates fingers and went out-of-bounds.")
+                            ballHandler.fga += 1
+                            if amount == 3:
+                                ballHandler.three_fga += 1
+                                self.statObj.three_fga[teamNum - 1] += 1
+                            self.statObj.fga[teamNum - 1] += 1
+                            
+                            reboundResult = self.calcRebound(self.team1, self.team2)
+                            reboundingPlayer = reboundResult[0]
+                            reboundingPlayer.rebounds += 1
+                            ballHandler.holdingBall = False
+                            defender.guardingBall = False
+                            reboundingPlayer.holdingBall = True
+                            
+                            
+                            resultingTeam = reboundResult[2]
+                            resultingTeam.ballHandler = reboundingPlayer
+                            # resultingTeam.onBallDefender = reboundingPlayer.defendedBy
+                            
+                            reboundingTeamNum = reboundResult[1]
+                            self.statObj.rebounds[reboundingTeamNum - 1] += 1
+                            
+                            if reboundingTeamNum == teamNum:
+                                print(f"Offensive Rebound by {reboundingPlayer.name}. They are at {reboundingPlayer.location}.")
+                                for player in resultingTeam.players:
+                                    player.doubled = False
+                                    player.midDrive = False
+                                    player.postingUp = False
+                            else:
+                                for player in self.team1.players:
+                                    player.reset()
+                                for player in self.team2.players:
+                                    player.reset()
+                                                        
+                            self.startPossession(False, reboundingTeamNum, True)
+                    defender.faltered = False
+                    defender.ankleBroken = False                                
+            case "Pass":
+                if ballHandler.pumpFaking or defender.hasBeenPumpFaked:
+                    if defensiveAction == "Steal":
+                        defender.faltered = True
+                        print("That was a pass fake.")
+                        ballHandler.pumpFaking = False
+                        defender.hasBeenPumpFaked = False
+                        self.makeOptions(teamNum)
+                else:
+                    passRtg = ballHandler.basicRatings["Passing"]
+                    otHandRtg = self.targetPlayer.basicRatings["Hands"] # the player who is receiving the pass's ability to catch it
+
+                    match defensiveAction:
+                        
+                        case "Steal":
+                            dStealRtg = defender.basicRatings["Steal"]
+                            dHandRtg = defender.basicRatings["Hands"] # the player stealing it's ability to intercept
+
+                            oChance = passRtg + otHandRtg
+                            dChance = dStealRtg + dHandRtg
+                            
+                            if ballHandler.doubled:
+                                dChance += 20
+                            total = oChance + dChance
+                            stealChance = (dChance/total) * 100
+                            ballStolen = self.determineSuccess(stealChance)
+                            
+                        case "Stay on Defense" | "Give Up":
+                            pass
+                    
+                    if ballStolen:
+                        print("Pass intercepted.")
                         defender.holdingBall = True
                         defender.guardingBall = False
                         ballHandler.holdingBall = False
                         ballHandler.guardingBall = True
                         
-                        self.startPossession(False, otherTeamNum, True)   
-
+                        
+                        self.startPossession(False, otherTeamNum, False)
+                        
+                    else:
+                        if defender.faltered:
+                            bonus = 10
+                        else:
+                            bonus = 0
+                        finalChance = passRtg + otHandRtg + bonus
+                        if finalChance >= 100:
+                            finalChance = 99
+                        
+                        if ballHandler.doubled:
+                            finalChance -= 20
+                            if finalChance < 1:
+                                finalChance == 1
+                        
+                        result = self.determineSuccess(finalChance)
+                        if result:
+                            
+                            ballHandler.holdingBall = False
+                            defender.guardingBall = False
+                            self.targetPlayer.holdingBall = True
+                            self.targetPlayer.receivingPass = True
+                            
+                            print(f"Pass successful. {self.targetPlayer.name} has the ball at {self.targetPlayer.location}.")
+                            
+                            if self.targetPlayer.wideOpen:
+                                self.startPossession(False, teamNum, False)
+                            else:
+                                self.startPossession(False, teamNum, True)
+                                
+                        else:
+                            print("Pass slipped through teammates fingers and went out-of-bounds.")
+                            defender.holdingBall = True
+                            defender.guardingBall = False
+                            ballHandler.holdingBall = False
+                            ballHandler.guardingBall = True
+                            
+                            self.startPossession(False, otherTeamNum, True)   
+                        defender.faltered = False
+                        defender.ankleBroken = False
+                        
             case "Drive Left" | "Drive Right" | "Dribble" | "Post Moves":
                 intDef = defender.basicRatings["Interior D"]
                 perDef = defender.basicRatings["Perimeter D"]
@@ -849,7 +925,15 @@ class Game:
                     
                     self.startPossession(False, otherTeamNum, False)
                 
-                else:                           
+                
+                
+                else:   
+                    if defender.faltered:
+                        finalChance += 10 #bonus
+                     
+                    if defensiveAction == "Give Up":
+                        finalChance = 99
+                                                                        
                     result = self.determineSuccess(finalChance)
                     if offensiveAction in ["Drive Left", "Drive Right"]:
                         if result:    
@@ -864,6 +948,8 @@ class Game:
                         else:
                             pass # fumble the ball and a further calculation to determine whether it leads to
                                  # a turnover, a picked up dribble, or in best case: you get to keep dribbling
+                    defender.faltered = False
+                    defender.ankleBroken = False
                     
             case "Call for Screen":
                 match defensiveAction:
@@ -1098,10 +1184,11 @@ class Game:
             #offense            
             case "Pass" | "Call for Screen" | "Teammate Cut" | "Dribble"| "Post Moves" | "Move" | "Back-Out" | "Drive" | "Continue Drive":#| "Layup":
                 if self.tempChoiceHold not in ["Dribble", "Post Moves"]:
-                    team.ballHandler.dribbleChain.clear() 
+                    team.ballHandler.dribbleChain.clear()
+                if choice in ["Pass", "Call for Screen", "Drive", "Teammate Cut"]:
+                    self.tempChoiceHold = choice 
                 self.makeOptions(teamNum, True, choice)
-                if choice in ["Pass", "Call for Screen", "Drive"]:
-                    self.tempChoiceHold = choice
+                
                 
             case "Shoot" | "Dunk" | "Floater" | "Post Fade" | "Post Hook" | "Drive Left" | "Drive Right":#| "Layup":#| "Back Down":
                 team.ballHandler.dribbleChain.clear()
@@ -1110,7 +1197,7 @@ class Game:
             case "Pump Fake" | "Pass Fake":
                 team.ballHandler.dribbleChain.clear()
                 oRtg = team.ballHandler.basicRatings["Offensive IQ"] # if i ever do multiplayer ill need to do something about this being team1 instead of like a general team variable. think i figured it out
-                total = oRtg + otherTeam.ballHandler.basicRatings["Defensive IQ"]
+                total = oRtg + otherTeam.onBallDefender.basicRatings["Defensive IQ"]
                 c = round((oRtg/total) * 100)
                 result = self.determineSuccess(c)
                 if result:
@@ -1167,6 +1254,17 @@ class Game:
                     print(f"{openPlayer.name} is wide open at {openPlayer.location}.")
                     
                     self.makeOptions(otherTeamNum)
+                elif self.tempChoiceHold == "Teammate Cut":
+                    cutDefendingPlayerIndex = self.targetPlayer.defendedBy
+                    cutDefendingPlayer = otherTeam.players[cutDefendingPlayerIndex]
+                    
+                    if self.targetPlayer.wideOpen:
+                        defensiveAction = "Watch"
+                    else:
+                        defensiveAction = "Stay on Defense"
+                        
+                    self.chanceCalc("Teammate Cut", defensiveAction, self.targetPlayer, cutDefendingPlayer, teamNum, otherTeamNum)
+                    
                 else:    
                     self.makeOptions(otherTeamNum, False, None, self.tempChoiceHold)
             case d if d in ["Stepback", "Crossover", "Between Legs", "Behind the back", "Shimmy", "Hesitation", "Spin", "Hopstep"]: 
