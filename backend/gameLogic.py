@@ -136,6 +136,7 @@ class Player:
                     "Screen" : randint(1, 100), #ability to set screen
                     "Passing" : randint(1, 100), #pass throwing ability
                     "Hands" : randint(1, 100), #pass catching ability, pass stealing ability
+                    "Craftiness" : randint(1, 100), #if high enough itll give you a chance to avoid a block mid layup and either readjust layup or pass out
 
                     #### harder to steal when in post i guess
                     # "Back Down" : randint(45, 55), #in post. should there just be a strength rating for screens, driving, interior D, and post back downs?
@@ -144,13 +145,13 @@ class Player:
                     # "Post Dropstep" : randint(45, 55), no because idk where to put it
                     
                     "Ball Handle" : randint(45, 55), #ability to chain together moves? low rating and doing too many in a row causes turnover. kind of an arbitrary rating ngl
-                    "Stepback" : randint(45, 55), #used in post too
-                    "Crossover" : randint(45, 55),
-                    "Between Legs" : randint(45, 55), #dk if i wanna keep this
-                    "Behind the back" : randint(45, 55), #or this 
-                    "Hesitation" : randint(45, 55),
-                    "Spin" : randint(45, 55), #used in post too
-                    "Hopstep" : randint(45, 55), #used in post too
+                    "Stepback" : randint(-20, 20), #used in post too
+                    "Crossover" : randint(-20, 20),
+                    "Between Legs" : randint(-20, 20), #dk if i wanna keep this
+                    "Behind the back" : randint(-20, 20), #or this 
+                    "Hesitation" : randint(-20, 20),
+                    "Spin" : randint(-20, 20), #used in post too
+                    "Hopstep" : randint(-20, 20), #used in post too
                     
                     # "Jab Step" : randint(45, 55),
                     
@@ -299,9 +300,6 @@ class Team:
         
         self.playerDict = {}
         
-        for player in self.players:
-            self.playerDict[f"{player.name} (at {player.location})"] = player
-        
     def update(self):
         if self.onOffense and not self.onDefense:    
             for player in self.players:
@@ -424,6 +422,13 @@ class Game:
         # case "Call for Screen":
         #     options = ["Go Over", "Go Under", "Switch"]     
         
+    def calcDribble(self, offensivePlayer, defender):
+        handleRtg = offensivePlayer.basicRatings["Ball Handle"]   
+        perD = defender.basicRatings["Perimeter D"] 
+        dribbleLen = len(offensivePlayer.dribbleChain)    
+        
+        
+        
     def calcRebound(self, team, otherTeam):
         oReboundRtgs = []
         dReboundRtgs = []
@@ -493,11 +498,13 @@ class Game:
         if resultingPlayer in allPlayers[0:team.teamSize]:
             resultingTeam = team
             resultingTeamNum = 1
+            resultingOtherTeam = otherTeam
         elif resultingPlayer in allPlayers[otherTeam.teamSize:]:
             resultingTeam = otherTeam
             resultingTeamNum = 2
+            resultingOtherTeam = team
 
-        return resultingPlayer, resultingTeamNum, resultingTeam
+        return resultingPlayer, resultingTeamNum, resultingTeam, resultingOtherTeam
                 
     def calcFoul(self, ballHandler, defender,  offensiveTeamNum, defendingTeamNum, extra = 1,):
         drawFoulRtg = ballHandler.basicRatings["Draw Foul"]
@@ -561,7 +568,6 @@ class Game:
                     case "Watch":
                         result = True
                         
-                result = self.determineSuccess(finalChance)
                 if result:  
                     locNum = randint(13, 15)
                     location = spots[locNum]
@@ -761,17 +767,21 @@ class Game:
                             
                             reboundResult = self.calcRebound(self.team1, self.team2)
                             reboundingPlayer = reboundResult[0]
+                            reboundingTeamNum = reboundResult[1]
+                            resultingTeam = reboundResult[2]
+                            resultingOtherTeam = reboundResult[3]
+                            
                             reboundingPlayer.rebounds += 1
                             ballHandler.holdingBall = False
                             defender.guardingBall = False
                             reboundingPlayer.holdingBall = True
+                            newDefender = resultingOtherTeam.players[int(reboundingPlayer.defendedBy)]
+                            newDefender.guardingBall = True
+                             
                             
-                            
-                            resultingTeam = reboundResult[2]
                             resultingTeam.ballHandler = reboundingPlayer
-                            # resultingTeam.onBallDefender = reboundingPlayer.defendedBy
+                            resultingOtherTeam.onBallDefender = newDefender
                             
-                            reboundingTeamNum = reboundResult[1]
                             self.statObj.rebounds[reboundingTeamNum - 1] += 1
                             
                             if reboundingTeamNum == teamNum:
@@ -925,8 +935,6 @@ class Game:
                     
                     self.startPossession(False, otherTeamNum, False)
                 
-                
-                
                 else:   
                     if defender.faltered:
                         finalChance += 10 #bonus
@@ -943,10 +951,26 @@ class Game:
                             self.makeOptions(teamNum)
                     else:
                         if result:
-                            # it adds a rhythm bonus to next action, but also then calculates if the defender falters or even has their ankles broken
+                            # it adds a rhythm bonus to next action, but also then calculates if the defender 
+                            # falters or even has their ankles broken
                             self.makeOptions(teamNum)
                         else:
-                            pass # fumble the ball and a further calculation to determine whether it leads to
+                            ballHandler.dribbleChain.clear()
+                            dHandRtg = defender.basicRatings["Hands"]
+                            o = ballSecRtg + ballHandlingRtg
+                            craftinessRtg = ballHandler.basicRatings["Craftiness"]
+                            pickUpChance = o - dHandRtg
+                            keepDribble = o + craftinessRtg - dHandRtg
+                            possibleOutcomes = ["Turnover", "Picked Up Dribble", "Keep Dribbling"]
+                            outcome = choices(possibleOutcomes, weights=[dHandRtg, pickUpChance, keepDribble])[0]
+                            match outcome:
+                                case "Turnover":
+                                    pass
+                                case "Picked Up Dribble":
+                                    ballHandler.pickedUpDribble = True
+                                case "Keep Dribbling":
+                                    self.makeOptions(teamNum)
+                             # fumble the ball and a further calculation to determine whether it leads to
                                  # a turnover, a picked up dribble, or in best case: you get to keep dribbling
                     defender.faltered = False
                     defender.ankleBroken = False
@@ -1109,7 +1133,9 @@ class Game:
                 match firstAction:
                     case "Pass" | "Call for Screen" | "Teammate Cut" | "Double Team":
                         options = []
-                        
+                        team.playerDict = {}
+                        for player in team.players:
+                            team.playerDict[f"{player.name} (at {player.location})"] = player
                         optionsSTR = list(team.playerDict.keys())
                         optionsOBJ = list(team.playerDict.values())
                         
@@ -1152,7 +1178,7 @@ class Game:
                                 continue
                     case "Continue Drive":
                         options = spots[13:] 
-                        for player in self.team:
+                        for player in team.players:
                             try:
                                 options.remove(player.location) #remove choices where other teammates are at
                             except:
@@ -1229,6 +1255,7 @@ class Game:
                     print("Clearly faking a shot or pass")
                 self.makeOptions(otherTeamNum, False, None, newChoice)
             case "Stop Drive":
+                team.ballHandler.midDrive = False
                 self.makeOptions(teamNum)
             case "Post Up":
                 team.ballHandler.dribbleChain.clear()
@@ -1244,9 +1271,11 @@ class Game:
                 self.targetPlayer = team.playerDict[p]  
                 self.passingOptions.clear()
                 team.currentChoice = self.tempChoiceHold
-                if self.tempChoiceHold == "Double Team":
+                self.tempChoiceHold = ""
+                
+                if team.currentChoice == "Double Team":
                     otherTeam.ballHandler.doubled = True
-                    
+                    self.targetPlayer.location = otherTeam.ballHandler.location
                     playerNum = int(self.targetPlayer.playerNum)
                     openPlayerIndex = otherTeam.players[playerNum].defendedBy
                     openPlayer = otherTeam.players[openPlayerIndex]
@@ -1254,7 +1283,7 @@ class Game:
                     print(f"{openPlayer.name} is wide open at {openPlayer.location}.")
                     
                     self.makeOptions(otherTeamNum)
-                elif self.tempChoiceHold == "Teammate Cut":
+                elif team.currentChoice == "Teammate Cut":
                     cutDefendingPlayerIndex = self.targetPlayer.defendedBy
                     cutDefendingPlayer = otherTeam.players[cutDefendingPlayerIndex]
                     
@@ -1262,16 +1291,21 @@ class Game:
                         defensiveAction = "Watch"
                     else:
                         defensiveAction = "Stay on Defense"
+
                         
                     self.chanceCalc("Teammate Cut", defensiveAction, self.targetPlayer, cutDefendingPlayer, teamNum, otherTeamNum)
                     
                 else:    
-                    self.makeOptions(otherTeamNum, False, None, self.tempChoiceHold)
+                    self.makeOptions(otherTeamNum, False, None, team.currentChoice)
+                    
+                    
             case d if d in ["Stepback", "Crossover", "Between Legs", "Behind the back", "Shimmy", "Hesitation", "Spin", "Hopstep"]: 
+                team.ballHandler.dribbled = True
                 team.ballHandler.dribbleChain.append(d)
                 team.currentChoice = "Dribble" 
                 self.makeOptions(otherTeamNum, False, None, "Dribble")
             case s if s in spots: #move/back-out and drive once you got through defender
+                team.ballHandler.dribbled = True
                 team.ballHandler.dribbleChain.clear() 
                 team.ballHandler.location = choice
                 otherTeam.onBallDefender.location = choice
@@ -1280,6 +1314,7 @@ class Game:
                     print(f"Drove to {choice}.")
                 else:
                     print(f"Moved to {choice}")
+                self.tempChoiceHold = ""
                 self.makeOptions(teamNum)
                 
             # defense
@@ -1304,6 +1339,7 @@ class Game:
                 if result:
                     otherTeam.ballHandler.wideOpen = False
                     if choice == "Late Contest":
+                        team.onBallDefender.location = otherTeam.ballHandler.location
                         team.currentChoice = "Contest"
                     else:
                         team.currentChoice = "Stay on Defense"
